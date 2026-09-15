@@ -3,114 +3,141 @@
 #include "TableModel.h"
 
 #include <QDebug>
-#include <QLabel>
-#include <QPushButton>
 #include <QTableView>
 #include <QThread>
-#include <QVBoxLayout>
-#include <QWidget>
+#include <QSplitter>
+#include <QTreeWidget>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
-      label(new QLabel("等待查询...", this)),
-      button(new QPushButton("查询数据", this)),
+      treeWidget(new QTreeWidget(this)),
       tableView(new QTableView(this)),
+      splitter(new QSplitter(this)),
       model(new TableModel(this)),
       thread(new QThread(this)),
       worker(new Worker)
 {
     // =========================
-    // 创建界面
+    // 左侧数据库树
     // =========================
 
-    auto *centralWidget = new QWidget(this);
-    auto *layout = new QVBoxLayout(centralWidget);
-
-    layout->addWidget(label);
-    layout->addWidget(button);
-    layout->addWidget(tableView);
-
-    setCentralWidget(centralWidget);
-
-    resize(600, 400);
-    setWindowTitle("Qt MySQL Model View Demo");
+    treeWidget->setHeaderLabel("数据库");
 
     // =========================
-    // Model / View
+    // 右侧查询结果表格
     // =========================
 
-    // QTableView 从 Model 中获取数据
     tableView->setModel(model);
+
+    // =========================
+    // 左右布局
+    // =========================
+
+    splitter->addWidget(treeWidget);
+    splitter->addWidget(tableView);
+
+    // 右侧比左侧更宽
+    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(1, 3);
+
+    setCentralWidget(splitter);
+
+    resize(800, 500);
+    setWindowTitle("MyDBManager");
 
     // =========================
     // Worker / Thread
     // =========================
 
-    // 把 Worker 的线程归属改为 worker thread
+    // 将 Worker 的线程归属移动到 worker thread
     worker->moveToThread(thread);
 
-    // 工作线程启动后，在 Worker 线程初始化数据库
+    // Worker线程启动后，在 Worker线程初始化数据库
     connect(thread,
             &QThread::started,
             worker,
             &Worker::initDatabase);
 
-    // 点击按钮
-    connect(button,
-            &QPushButton::clicked,
+    // Worker查询数据库列表成功
+    // → 结果传回GUI线程
+    connect(worker,
+            &Worker::databasesLoaded,
             this,
-            &MainWindow::onButtonClicked);
+            &MainWindow::onDatabasesLoaded);
 
-    // MainWindow 发出 startWork
-    // Worker 在线程中执行 doWork
-    connect(this,
-            &MainWindow::startWork,
-            worker,
-            &Worker::doWork);
-
-    // Worker 查询成功
-    // 结果回到 GUI 线程
+    // Worker查询表数据成功
+    // → 结果传回GUI线程
     connect(worker,
             &Worker::queryFinished,
             this,
             &MainWindow::onQueryFinished);
 
-    // Worker 查询失败
-    // 错误信息回到 GUI 线程
+    // Worker发生错误
+    // → 错误信息传回GUI线程
     connect(worker,
             &Worker::queryError,
             this,
             &MainWindow::onQueryError);
 
-    // Worker 线程结束后删除 Worker
+    // Worker线程结束后删除Worker
     connect(thread,
             &QThread::finished,
             worker,
             &QObject::deleteLater);
 
-    // 启动 Worker 线程
+    //树被点击
+    connect(treeWidget,
+        &QTreeWidget::itemClicked,
+        this,
+        &MainWindow::onTreeItemClicked);
+
+    //MainWindow请求Worker查询表
+    connect(this,
+        &MainWindow::requestTables,
+        worker,
+        &Worker::loadTables);
+
+    //Worker返回表列表
+    connect(worker,
+        &Worker::tablesLoaded,
+        this,
+        &MainWindow::onTablesLoaded);
+
+    // 启动Worker线程
     thread->start();
 }
 
+
 MainWindow::~MainWindow()
 {
-    // 请求 Worker 线程退出
+    // 请求Worker线程退出事件循环
     thread->quit();
 
-    // 等待线程真正结束
+    // 等待Worker线程真正结束
     thread->wait();
 }
 
-void MainWindow::onButtonClicked()
+
+void MainWindow::onDatabasesLoaded(
+    const QStringList &databases)
 {
-    qDebug() << "MainWindow::onButtonClicked thread:"
+    // 这个函数运行在GUI线程
+    qDebug() << "MainWindow::onDatabasesLoaded thread:"
              << QThread::currentThreadId();
 
-    label->setText("正在查询...");
+    // 刷新之前先清空旧节点
+    treeWidget->clear();
 
-    // 通知 Worker 开始数据库查询
-    emit startWork();
+    // 根据数据库列表创建树的顶层节点
+    for (const QString &database : databases) {
+
+        QTreeWidgetItem *item =
+            new QTreeWidgetItem(treeWidget);
+
+        item->setText(0, database);
+    }
 }
+
 
 void MainWindow::onQueryFinished(
     const QStringList &headers,
@@ -119,19 +146,82 @@ void MainWindow::onQueryFinished(
     qDebug() << "MainWindow::onQueryFinished thread:"
              << QThread::currentThreadId();
 
-    // Worker 查询完成后，把结果交给 Model
+    // 查询结果已经回到GUI线程
+    // 交给Model保存
     model->setHeaders(headers);
     model->setData(data);
-
-    label->setText(
-        QString("查询成功，共 %1 行").arg(data.size())
-    );
 }
+
 
 void MainWindow::onQueryError(const QString &error)
 {
     qDebug() << "MainWindow::onQueryError thread:"
              << QThread::currentThreadId();
 
-    label->setText("查询失败：" + error);
+    qDebug() << "Query error:" << error;
+}
+
+void MainWindow::onTreeItemClicked(
+    QTreeWidgetItem *item,
+    int column)
+{
+    Q_UNUSED(column);
+
+    // 如果这个节点有父节点，说明它是“表”，不是“数据库”
+    if (item->parent() != nullptr) {
+        return;
+    }
+
+    // 获取用户点击的数据库名称
+    QString database = item->text(0);
+
+    qDebug() << "Clicked database:" << database;
+
+    // 通知 Worker 查询该数据库中的表
+    emit requestTables(database);
+}
+
+void MainWindow::onTablesLoaded(
+    const QString &database,
+    const QStringList &tables)
+{
+    // 这个槽运行在 GUI 线程
+    qDebug() << "MainWindow::onTablesLoaded thread:"
+             << QThread::currentThreadId();
+
+    QTreeWidgetItem *databaseItem = nullptr;
+
+    // 遍历所有顶层节点，找到对应的数据库
+    for (int i = 0;
+         i < treeWidget->topLevelItemCount();
+         ++i) {
+
+        QTreeWidgetItem *item =
+            treeWidget->topLevelItem(i);
+
+        if (item->text(0) == database) {
+            databaseItem = item;
+            break;
+        }
+    }
+
+    // 如果没找到对应数据库，就不继续处理
+    if (databaseItem == nullptr) {
+        return;
+    }
+
+    // 先删除该数据库下面旧的表节点，防止重复
+    databaseItem->takeChildren();
+
+    // 为查询到的每张表创建一个子节点
+    for (const QString &table : tables) {
+
+        QTreeWidgetItem *tableItem =
+            new QTreeWidgetItem(databaseItem);
+
+        tableItem->setText(0, table);
+    }
+
+    // 展开数据库节点，让用户直接看到表
+    databaseItem->setExpanded(true);
 }

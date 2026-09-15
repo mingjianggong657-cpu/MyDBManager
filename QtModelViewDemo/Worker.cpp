@@ -7,102 +7,198 @@
 #include <QThread>
 
 Worker::Worker(QObject *parent)
-    : QObject(parent)
+	: QObject(parent)
 {
 }
 
 void Worker::initDatabase()
 {
-    qDebug() << "initDatabase thread:"
-             << QThread::currentThreadId();
+	// 当前函数应该运行在 Worker 线程
+	qDebug() << "initDatabase thread:"
+		<< QThread::currentThreadId();
 
-    // 创建 Worker 线程自己的数据库连接
-    db = QSqlDatabase::addDatabase(
-        "QMYSQL",
-        "worker_connection"
-    );
+	// 创建 Worker 线程自己的 MySQL 连接
+	db = QSqlDatabase::addDatabase(
+			"QMYSQL",
+			"worker_connection"
+			);
 
-    db.setHostName("127.0.0.1");
-    db.setPort(3306);
-    db.setDatabaseName("webserver");
-    db.setUserName("mydb_user");
+	db.setHostName("127.0.0.1");
+	db.setPort(3306);
+	db.setDatabaseName("webserver");
+	db.setUserName("mydb_user");
 
-    // 这里只放你自己的本地密码
-    db.setPassword("YOUR_PASSWORD");
+	// 本地测试使用自己的密码
+	// 注意：不要把真实密码提交到公开 GitHub
+	db.setPassword("YOUR_PASSWORD");
 
-    qDebug() << "Before db.open()";
+	qDebug() << "Before db.open()";
 
-    if (!db.open()) {
-        QString error = db.lastError().text();
+	// 打开数据库
+	if (!db.open()) {
+		QString error = db.lastError().text();
 
-        qDebug() << "Database open failed:"
-                 << error;
+		qDebug() << "Database open failed:"
+			<< error;
 
-        emit queryError(error);
-        return;
-    }
+		// 错误信息通过信号返回GUI线程
+		emit queryError(error);
 
-    qDebug() << "Database opened successfully.";
+		return;
+	}
+
+	qDebug() << "Database opened successfully.";
+
+	// 数据库连接成功后，立即查询数据库列表
+	loadDatabases();
 }
+
+void Worker::loadDatabases()
+{
+	// 确认该函数确实运行在 Worker 线程
+	qDebug() << "Worker::loadDatabases thread:"
+		<< QThread::currentThreadId();
+
+	// 使用已经初始化好的数据库连接
+	QSqlQuery query(db);
+
+	// 查询所有数据库
+	if (!query.exec("SHOW DATABASES")) {
+		QString error = query.lastError().text();
+
+		qDebug() << "SHOW DATABASES failed:"
+			<< error;
+
+		emit queryError(error);
+
+		return;
+	}
+
+	// 用 QStringList 保存数据库名称
+	QStringList databases;
+
+	// 每调用一次 next()，移动到下一条查询结果
+	while (query.next()) {
+
+		// SHOW DATABASES 的数据库名称位于第0列
+		QString databaseName =
+			query.value(0).toString();
+
+		databases.append(databaseName);
+	}
+
+	qDebug() << "Databases:" << databases;
+
+	// 将数据库列表通过Signal发送给GUI线程
+	emit databasesLoaded(databases);
+}
+
+
 
 void Worker::doWork()
 {
-    qDebug() << "Worker::doWork thread:"
+	qDebug() << "Worker::doWork thread:"
+		<< QThread::currentThreadId();
+
+	// 使用 Worker 线程已经建立好的数据库连接
+	QSqlQuery query(db);
+
+	if (!query.exec("SELECT * FROM user")) {
+		QString error = query.lastError().text();
+
+		qDebug() << "Query failed:"
+			<< error;
+
+		emit queryError(error);
+		return;
+	}
+
+	// ============================
+	// 获取列信息
+	// ============================
+
+	int columnCount = query.record().count();
+
+	QStringList headers;
+
+	for (int column = 0; column < columnCount; ++column) {
+		headers.append(
+				query.record().fieldName(column)
+			      );
+	}
+
+	// ============================
+	// 获取数据
+	// ============================
+
+	QVector<QStringList> data;
+
+	while (query.next()) {
+
+		QStringList row;
+
+		for (int column = 0;
+				column < columnCount;
+				++column) {
+
+			row.append(
+					query.value(column).toString()
+				  );
+		}
+
+		data.append(row);
+	}
+
+	qDebug() << "Query success.";
+	qDebug() << "Rows:" << data.size();
+	qDebug() << "Columns:" << headers.size();
+
+	// 把查询结果发送给 GUI 线程
+	emit queryFinished(headers, data);
+}
+
+void Worker::loadTables(const QString &database)
+{
+    // 当前函数运行在 Worker 线程，负责查询数据库中的表
+    qDebug() << "Worker::loadTables thread:"
              << QThread::currentThreadId();
 
-    // 使用 Worker 线程已经建立好的数据库连接
     QSqlQuery query(db);
 
-    if (!query.exec("SELECT * FROM user")) {
+    // 切换到用户点击的数据库
+    QString sql = QString("USE `%1`").arg(database);
+
+    if (!query.exec(sql)) {
         QString error = query.lastError().text();
 
-        qDebug() << "Query failed:"
+        qDebug() << "USE database failed:"
                  << error;
 
         emit queryError(error);
         return;
     }
 
-    // ============================
-    // 获取列信息
-    // ============================
+    // 查询当前数据库中的所有表
+    if (!query.exec("SHOW TABLES")) {
+        QString error = query.lastError().text();
 
-    int columnCount = query.record().count();
+        qDebug() << "SHOW TABLES failed:"
+                 << error;
 
-    QStringList headers;
-
-    for (int column = 0; column < columnCount; ++column) {
-        headers.append(
-            query.record().fieldName(column)
-        );
+        emit queryError(error);
+        return;
     }
 
-    // ============================
-    // 获取数据
-    // ============================
+    QStringList tables;
 
-    QVector<QStringList> data;
-
+    // SHOW TABLES 返回的表名位于第 0 列
     while (query.next()) {
-
-        QStringList row;
-
-        for (int column = 0;
-             column < columnCount;
-             ++column) {
-
-            row.append(
-                query.value(column).toString()
-            );
-        }
-
-        data.append(row);
+        tables.append(query.value(0).toString());
     }
 
-    qDebug() << "Query success.";
-    qDebug() << "Rows:" << data.size();
-    qDebug() << "Columns:" << headers.size();
+    qDebug() << "Database:" << database;
+    qDebug() << "Tables:" << tables;
 
-    // 把查询结果发送给 GUI 线程
-    emit queryFinished(headers, data);
+    // 将数据库名和表名列表传回 GUI 线程
+    emit tablesLoaded(database, tables);
 }
