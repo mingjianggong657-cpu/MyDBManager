@@ -202,3 +202,146 @@ void Worker::loadTables(const QString &database)
     // 将数据库名和表名列表传回 GUI 线程
     emit tablesLoaded(database, tables);
 }
+
+void Worker::loadTableData(
+    const QString &database,
+    const QString &table)
+{
+    // 这个函数应该运行在 Worker 线程
+    qDebug() << "Worker::loadTableData thread:"
+             << QThread::currentThreadId();
+
+    qDebug() << "Database:" << database
+             << "Table:" << table;
+
+    QSqlQuery query(db);
+
+    // 先切换到用户点击的数据库
+    QString useSql =
+        QString("USE `%1`").arg(database);
+
+    if (!query.exec(useSql)) {
+        QString error = query.lastError().text();
+
+        qDebug() << "USE database failed:"
+                 << error;
+
+        emit queryError(error);
+        return;
+    }
+
+    // 查询指定表中的所有数据
+    QString selectSql =
+        QString("SELECT * FROM `%1`").arg(table);
+
+    if (!query.exec(selectSql)) {
+        QString error = query.lastError().text();
+
+        qDebug() << "SELECT failed:"
+                 << error;
+
+        emit queryError(error);
+        return;
+    }
+
+    // 获取查询结果中的列信息
+    QSqlRecord record = query.record();
+
+    int columnCount = record.count();
+
+    QStringList headers;
+
+    // 保存列名
+    for (int column = 0;
+         column < columnCount;
+         ++column) {
+
+        headers.append(record.fieldName(column));
+    }
+
+    // 保存所有行的数据
+    QVector<QStringList> data;
+
+    while (query.next()) {
+
+        QStringList row;
+
+        for (int column = 0;
+             column < columnCount;
+             ++column) {
+
+            row.append(
+                query.value(column).toString()
+            );
+        }
+
+        data.append(row);
+    }
+
+    qDebug() << "Headers:" << headers;
+    qDebug() << "Rows:" << data.size();
+
+    // 将查询结果发送回 GUI 线程
+    emit queryFinished(headers, data);
+}
+
+void Worker::executeSql(const QString &sql)
+{
+    // 确认 SQL 执行发生在 Worker 线程
+    qDebug() << "Worker::executeSql thread:"
+             << QThread::currentThreadId();
+
+    qDebug() << "Execute SQL:" << sql;
+
+    QSqlQuery query(db);
+
+    // 执行 SQL
+    if (!query.exec(sql)) {
+        QString error = query.lastError().text();
+
+        qDebug() << "SQL execute failed:"
+                 << error;
+
+        emit queryError(error);
+        return;
+    }
+
+    // 获取结果中的列信息
+    QSqlRecord record = query.record();
+
+    int columnCount = record.count();
+
+    QStringList headers;
+
+    for (int column = 0;
+         column < columnCount;
+         ++column) {
+
+        headers.append(record.fieldName(column));
+    }
+
+    // 保存查询结果
+    QVector<QStringList> data;
+
+    while (query.next()) {
+
+        QStringList row;
+
+        for (int column = 0;
+             column < columnCount;
+             ++column) {
+
+            row.append(
+                query.value(column).toString()
+            );
+        }
+
+        data.append(row);
+    }
+
+    qDebug() << "Headers:" << headers;
+    qDebug() << "Rows:" << data.size();
+
+    // 复用已有的查询结果信号
+    emit queryFinished(headers, data);
+}

@@ -10,7 +10,8 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QSplitter;
 class QThread;
-
+class QTextEdit;
+class QPushButton;
 class Worker;
 class TableModel;
 
@@ -42,10 +43,20 @@ private slots:
     // Worker 返回错误信息
     void onQueryError(const QString &error);
 
+    // 用户点击执行按钮
+    void onExecuteSql();
+
 signals:
 
     // 请求 Worker 查询指定数据库中的表
     void requestTables(const QString &database);
+
+    // 请求 Worker 查询指定表的数据
+    void requestTableData(const QString &database,
+                          const QString &table);
+
+    // 请求 Worker 执行用户输入的 SQL
+    void requestExecuteSql(const QString &sql);
 
 private:
 
@@ -54,7 +65,9 @@ private:
     QSplitter *splitter;
 
     TableModel *model;
-
+    // SQL 输入框和执行按钮
+    QTextEdit *sqlEdit;
+    QPushButton *executeButton;
     QThread *thread;
     Worker *worker;
 };

@@ -27,6 +27,13 @@ public slots:
     // 查询具体表的数据
     void doWork();
 
+    //查询制定表的数据
+    void loadTableData(const QString &database,
+                   const QString &table);
+
+    // 执行用户输入的 SQL
+    void executeSql(const QString &sql);
+
 signals:
 
     // 数据库列表查询成功后，把数据库名称传回 GUI
