@@ -50,6 +50,9 @@ signals:
     // 数据库操作失败后，把错误信息传回 GUI
     void queryError(const QString &error);
 
+    // 非查询 SQL 执行完成，返回影响的行数
+    void commandFinished(int affectedRows);
+
 private:
     // Worker 线程自己的数据库连接
     QSqlDatabase db;

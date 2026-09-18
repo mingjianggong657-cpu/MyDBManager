@@ -46,6 +46,11 @@ private slots:
     // 用户点击执行按钮
     void onExecuteSql();
 
+    // INSERT / UPDATE / DELETE 执行成功后调用
+    void onCommandFinished(int affectedRows);
+
+    
+
 signals:
 
     // 请求 Worker 查询指定数据库中的表
@@ -70,6 +75,9 @@ private:
     QPushButton *executeButton;
     QThread *thread;
     Worker *worker;
+    // 当前正在查看的数据库和表
+    QString currentDatabase;
+    QString currentTable;
 };
 
 #endif // MAINWINDOW_H

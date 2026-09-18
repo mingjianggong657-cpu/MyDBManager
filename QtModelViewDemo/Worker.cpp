@@ -30,7 +30,7 @@ void Worker::initDatabase()
 
 	// 本地测试使用自己的密码
 	// 注意：不要把真实密码提交到公开 GitHub
-	db.setPassword("YOUR_PASSWORD");
+	db.setPassword("123456");
 
 	qDebug() << "Before db.open()";
 
@@ -285,6 +285,7 @@ void Worker::loadTableData(
     emit queryFinished(headers, data);
 }
 
+
 void Worker::executeSql(const QString &sql)
 {
     // 确认 SQL 执行发生在 Worker 线程
@@ -306,42 +307,58 @@ void Worker::executeSql(const QString &sql)
         return;
     }
 
-    // 获取结果中的列信息
-    QSqlRecord record = query.record();
+    // SELECT / SHOW 等查询类 SQL
+    if (query.isSelect()) {
 
-    int columnCount = record.count();
+        QSqlRecord record = query.record();
 
-    QStringList headers;
+        int columnCount = record.count();
 
-    for (int column = 0;
-         column < columnCount;
-         ++column) {
+        QStringList headers;
 
-        headers.append(record.fieldName(column));
-    }
-
-    // 保存查询结果
-    QVector<QStringList> data;
-
-    while (query.next()) {
-
-        QStringList row;
-
+        // 获取列名
         for (int column = 0;
              column < columnCount;
              ++column) {
 
-            row.append(
-                query.value(column).toString()
+            headers.append(
+                record.fieldName(column)
             );
         }
 
-        data.append(row);
+        QVector<QStringList> data;
+
+        // 获取查询结果
+        while (query.next()) {
+
+            QStringList row;
+
+            for (int column = 0;
+                 column < columnCount;
+                 ++column) {
+
+                row.append(
+                    query.value(column).toString()
+                );
+            }
+
+            data.append(row);
+        }
+
+        qDebug() << "Headers:" << headers;
+        qDebug() << "Rows:" << data.size();
+
+        // 查询结果交给 Model/View
+        emit queryFinished(headers, data);
     }
+    else {
+        // INSERT / UPDATE / DELETE 等非查询 SQL
+        int affectedRows = query.numRowsAffected();
 
-    qDebug() << "Headers:" << headers;
-    qDebug() << "Rows:" << data.size();
+        qDebug() << "Command executed successfully.";
+        qDebug() << "Affected rows:" << affectedRows;
 
-    // 复用已有的查询结果信号
-    emit queryFinished(headers, data);
+        // 把影响行数返回 GUI
+        emit commandFinished(affectedRows);
+    }
 }

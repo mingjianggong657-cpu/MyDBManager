@@ -143,6 +143,12 @@ MainWindow::MainWindow(QWidget *parent)
 			worker,
 			&Worker::executeSql);
 
+	// Worker执行 INSERT / UPDATE / DELETE 成功
+	connect(worker,
+			&Worker::commandFinished,
+			this,
+			&MainWindow::onCommandFinished);
+
 	// 启动Worker线程
 	thread->start();
 }
@@ -202,38 +208,43 @@ void MainWindow::onQueryError(const QString &error)
 }
 
 void MainWindow::onTreeItemClicked(
-		QTreeWidgetItem *item,
-		int column)
+    QTreeWidgetItem *item,
+    int column)
 {
-	Q_UNUSED(column);
+    Q_UNUSED(column);
 
-	// 没有父节点，说明点击的是数据库节点
-	if (item->parent() == nullptr) {
+    // 点击数据库节点
+    if (item->parent() == nullptr) {
 
-		QString database = item->text(0);
+        QString database = item->text(0);
 
-		qDebug() << "Clicked database:"
-			<< database;
+        qDebug() << "Clicked database:"
+                 << database;
 
-		// 请求 Worker 查询这个数据库中的所有表
-		emit requestTables(database);
-	}
-	else {
-		// 有父节点，说明点击的是表节点
+        // 当前没有正在查看的具体表
+        currentDatabase.clear();
+        currentTable.clear();
 
-		// 当前节点的文字就是表名
-		QString table = item->text(0);
+        // 请求 Worker 查询该数据库中的表
+        emit requestTables(database);
+    }
+    else {
+        // 点击表节点
 
-		// 父节点的文字就是数据库名
-		QString database = item->parent()->text(0);
+        QString table = item->text(0);
+        QString database = item->parent()->text(0);
 
-		qDebug() << "Clicked table:"
-			<< database
-			<< table;
+        qDebug() << "Clicked table:"
+                 << database
+                 << table;
 
-		// 请求 Worker 查询指定表的数据
-		emit requestTableData(database, table);
-	}
+        // 保存当前正在查看的数据库和表
+        currentDatabase = database;
+        currentTable = table;
+
+        // 请求 Worker 查询该表的数据
+        emit requestTableData(database, table);
+    }
 }
 
 void MainWindow::onTablesLoaded(
@@ -296,4 +307,25 @@ void MainWindow::onExecuteSql()
 
 	// 请求 Worker 在线程中执行 SQL
 	emit requestExecuteSql(sql);
+}
+
+void MainWindow::onCommandFinished(int affectedRows)
+{
+    qDebug() << "SQL command finished."
+             << "Affected rows:"
+             << affectedRows;
+
+    // 如果当前正在查看某张表，DML 成功后自动重新查询
+    if (currentDatabase.isEmpty() ||
+        currentTable.isEmpty()) {
+        return;
+    }
+
+    qDebug() << "Refresh table:"
+             << currentDatabase
+             << currentTable;
+
+    // 复用已有的数据查询流程
+    emit requestTableData(currentDatabase,
+                          currentTable);
 }
