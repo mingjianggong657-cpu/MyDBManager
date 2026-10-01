@@ -37,6 +37,10 @@ public slots:
     // 执行多条 SQL，保证事务的原子性：全部成功才提交，任意失败则回滚
     void executeTransaction(const QStringList &sqlList);
 
+    // 使用预处理语句执行 SQL，参数通过占位符绑定
+    void executePreparedSql(const QString &sql,
+                            const QStringList &params);
+
 signals:
 
     // 数据库列表查询成功后，把数据库名称传回 GUI

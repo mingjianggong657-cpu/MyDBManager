@@ -149,6 +149,12 @@ MainWindow::MainWindow(QWidget *parent)
 			worker,
 			&Worker::executeTransaction);
 
+	// MainWindow 请求 Worker 使用预处理语句执行 SQL
+	connect(this,
+			&MainWindow::requestExecutePreparedSql,
+			worker,
+			&Worker::executePreparedSql);
+
 	// Worker执行 INSERT / UPDATE / DELETE 成功
 	connect(worker,
 			&Worker::commandFinished,
@@ -335,3 +341,4 @@ void MainWindow::onCommandFinished(int affectedRows)
 	emit requestTableData(currentDatabase,
 			currentTable);
 }
+

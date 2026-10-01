@@ -66,6 +66,11 @@ signals:
     // 请求 Worker 在同一个事务中执行多条 SQL
     void requestExecuteTransaction(const QStringList &sqlList);
 
+    // 请求 Worker 使用预处理语句执行 SQL
+    // SQL 中使用 ? 作为参数占位符
+    void requestExecutePreparedSql(const QString &sql,
+                               const QStringList &params);
+
 private:
 
     QTreeWidget *treeWidget;

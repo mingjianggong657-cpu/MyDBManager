@@ -363,6 +363,96 @@ void Worker::executeSql(const QString &sql)
 	}
 }
 
+void Worker::executePreparedSql(const QString &sql,
+                                const QStringList &params)
+{
+    qDebug() << "Execute prepared SQL:"
+             << sql;
+
+    QSqlQuery query(db);
+
+    // 先预编译 SQL，? 作为参数占位符
+    if (!query.prepare(sql)) {
+        QString error = query.lastError().text();
+
+        qDebug() << "Prepare failed:"
+                 << error;
+
+        emit queryError(error);
+        return;
+    }
+
+    // 按顺序绑定参数：
+    // 第 0 个参数绑定第一个 ?，第 1 个参数绑定第二个 ?
+    for (int i = 0; i < params.size(); ++i) {
+        query.bindValue(i, params.at(i));
+    }
+
+    // 执行已经绑定参数的 SQL
+    if (!query.exec()) {
+        QString error = query.lastError().text();
+
+        qDebug() << "Prepared SQL execute failed:"
+                 << error;
+
+        emit queryError(error);
+        return;
+    }
+
+    // SELECT 等查询类 SQL
+    if (query.isSelect()) {
+
+        QSqlRecord record = query.record();
+
+        int columnCount = record.count();
+
+        QStringList headers;
+
+        // 获取列名
+        for (int column = 0;
+             column < columnCount;
+             ++column) {
+
+            headers.append(record.fieldName(column));
+        }
+
+        QVector<QStringList> data;
+
+        // 获取查询结果
+        while (query.next()) {
+
+            QStringList row;
+
+            for (int column = 0;
+                 column < columnCount;
+                 ++column) {
+
+                row.append(query.value(column).toString());
+            }
+
+            data.append(row);
+        }
+
+        qDebug() << "Prepared query headers:"
+                 << headers;
+        qDebug() << "Prepared query rows:"
+                 << data.size();
+
+        // 查询结果交给 GUI
+        emit queryFinished(headers, data);
+    }
+    else {
+        // INSERT / UPDATE / DELETE 等非查询 SQL
+        int affectedRows = query.numRowsAffected();
+
+        qDebug() << "Prepared command executed successfully.";
+        qDebug() << "Affected rows:"
+                 << affectedRows;
+
+        emit commandFinished(affectedRows);
+    }
+}
+
 void Worker::executeTransaction(const QStringList &sqlList)
 {
 	// 没有 SQL 就不执行事务
