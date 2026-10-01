@@ -34,6 +34,9 @@ public slots:
     // 执行用户输入的 SQL
     void executeSql(const QString &sql);
 
+    // 执行多条 SQL，保证事务的原子性：全部成功才提交，任意失败则回滚
+    void executeTransaction(const QStringList &sqlList);
+
 signals:
 
     // 数据库列表查询成功后，把数据库名称传回 GUI

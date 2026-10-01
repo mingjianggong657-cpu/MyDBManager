@@ -63,6 +63,9 @@ signals:
     // 请求 Worker 执行用户输入的 SQL
     void requestExecuteSql(const QString &sql);
 
+    // 请求 Worker 在同一个事务中执行多条 SQL
+    void requestExecuteTransaction(const QStringList &sqlList);
+
 private:
 
     QTreeWidget *treeWidget;
@@ -78,6 +81,7 @@ private:
     // 当前正在查看的数据库和表
     QString currentDatabase;
     QString currentTable;
+
 };
 
 #endif // MAINWINDOW_H
